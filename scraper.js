@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const { generateUrl } = require('./url_generator');
 
 /**
  * 入口函式：每次被 API 觸發時啟動 Chromium，並在完成後關閉。
@@ -6,13 +7,13 @@ const { chromium } = require('playwright');
  * @param {string} [options.targetUrl] - 目標網址，未提供時使用範例網址。
  * @returns {Promise<Object>} 爬取結果；目前為佔位資料，方便後續擴展。
  */
-async function runScraper({ targetUrl } = {}) {
+async function runScraper() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
-    const urlToVisit = targetUrl || 'https://www.smartplay.lcsd.gov.hk/facilities/search-result?keywords=&district=CW,EN,SN,WCH&startDate=2026-01-18&typeCode=FOTP&venueCode=&sportCode=BAGM&typeName=%E8%B6%B3%E7%90%83&frmFilterType=&venueSportCode=&isFree=false';
+    const urlToVisit = generateUrl();
 
     await page.goto(urlToVisit, {
       waitUntil: 'domcontentloaded',

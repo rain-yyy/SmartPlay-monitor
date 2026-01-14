@@ -8,11 +8,9 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.post('/scrape', async (req, res) => {
-  const { url } = req.body || {};
-
+app.get('/scrape', async (_req, res) => {
   try {
-    const data = await runScraper({ targetUrl: url });
+    const data = await runScraper();
     res.json({ success: true, data });
   } catch (err) {
     console.error('scrape error', err);
