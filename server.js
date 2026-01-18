@@ -8,15 +8,19 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.get('/scrape', async (_req, res) => {
+app.get('/scrape', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[${requestId}] Starting scrape request...`);
   try {
     const data = await runScraper();
+    console.log(`[${requestId}] Scrape successful`);
     res.json({ success: true, data });
   } catch (err) {
-    console.error('scrape error', err);
+    console.error(`[${requestId}] Scrape error:`, err);
     res.status(500).json({
       success: false,
-      error: err?.message || 'scrape failed'
+      error: err?.message || 'scrape failed',
+      stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined
     });
   }
 });

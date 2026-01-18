@@ -4,14 +4,15 @@ const { generateUrl } = require('./url_generator');
 // 預定義的指紋配置
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
 ];
 
 const LOCALES = ['zh-HK', 'zh-CN', 'en-US', 'en-GB'];
-const TIMEZONES = ['Asia/Hong_Kong', 'Asia/Shanghai', 'America/New_York', 'Europe/London'];
+const TIMEZONES = ['Asia/Hong_Kong', 'Asia/Shanghai']; // 縮小範圍到本地相關區域
 
 function getRandomItem(array) {
   return array[Math.floor(Math.random() * array.length)];
@@ -27,46 +28,104 @@ async function runScraper(retries = 2) {
 
   while (attempt <= retries) {
     try {
+      console.log(`[Attempt ${attempt + 1}] Launching browser...`);
       browser = await chromium.launch({ 
         headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled', // 隱藏自動化特徵
+          '--disable-blink-features=AutomationControlled',
+          '--disable-infobars',
+          '--window-position=0,0',
+          '--ignore-certificate-errors',
+          '--ignore-certificate-errors-spki-list',
+          '--disable-dev-shm-usage', // 防止内存不足
+          '--disable-accelerated-2d-canvas',
+          '--disable-gpu',
         ]
       });
 
-      // 每次請求使用隨機配置
+      // 增加隨機硬體特徵
+      const hardwareConcurrency = getRandomItem([4, 8, 12, 16]);
+      const deviceMemory = getRandomItem([4, 8, 16]);
+
       const context = await browser.newContext({
         userAgent: getRandomItem(USER_AGENTS),
         locale: getRandomItem(LOCALES),
         timezoneId: getRandomItem(TIMEZONES),
-        viewport: { width: 1280 + Math.floor(Math.random() * 100), height: 720 + Math.floor(Math.random() * 100) },
-        deviceScaleFactor: Math.random() > 0.5 ? 1 : 2,
+        viewport: { 
+          width: 1280 + Math.floor(Math.random() * 200), 
+          height: 800 + Math.floor(Math.random() * 200) 
+        },
+        deviceScaleFactor: getRandomItem([1, 1.25, 1.5, 2]),
+        hasTouch: Math.random() > 0.5,
       });
 
       const page = await context.newPage();
       
-      // 額外隱藏 webdriver 特徵
-      await page.addInitScript(() => {
+      // 深度偽裝
+      await page.addInitScript(({ concurrency, memory }) => {
+        // 隱藏 webdriver
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      });
+        
+        // 偽裝硬體資訊
+        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => concurrency });
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => memory });
+        
+        // 偽裝 Chrome 插件
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [
+            { name: 'PDF Viewer', filename: 'internal-pdf-viewer' },
+            { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer' },
+            { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer' },
+          ],
+        });
+
+        // 偽裝 WebGL 指紋 (簡單版)
+        const getParameter = HTMLCanvasElement.prototype.getContext('2d').getParameter;
+        HTMLCanvasElement.prototype.getContext = ((orig) => function(type, attributes) {
+          if (type === 'webgl' || type === 'experimental-webgl') {
+            const context = orig.apply(this, [type, attributes]);
+            const origGetParameter = context.getParameter;
+            context.getParameter = function(param) {
+              if (param === 37445) return 'Intel Inc.'; // UNMASKED_VENDOR_WEBGL
+              if (param === 37446) return 'Intel(R) Iris(R) Xe Graphics'; // UNMASKED_RENDERER_WEBGL
+              return origGetParameter.apply(this, [param]);
+            };
+            return context;
+          }
+          return orig.apply(this, [type, attributes]);
+        })(HTMLCanvasElement.prototype.getContext);
+      }, { concurrency: hardwareConcurrency, memory: deviceMemory });
 
       const urlToVisit = generateUrl();
       console.log(`[Attempt ${attempt + 1}] Visiting: ${urlToVisit}`);
 
-      // 增加超時時間，並使用 networkidle 確保內容載入完成
-      await page.goto(urlToVisit, {
-        waitUntil: 'networkidle',
-        timeout: 45_000
+      // 設置隨機請求頭
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'zh-HK,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Upgrade-Insecure-Requests': '1',
       });
 
-      // 額外等待 1-3 秒，模擬真人行為，確保所有腳本執行完畢並設定 Cookie
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+      // 增加超時時間，並使用 domcontentloaded
+      await page.goto(urlToVisit, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000
+      });
 
-      const cookies = await context.cookies(urlToVisit);
+      // 隨機等待 2-5 秒，確保動態載入完成
+      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+
+      // 檢查是否出現了驗證碼或被屏蔽
+      const content = await page.content();
+      if (content.includes('Access Denied') || content.includes('Cloudflare') || content.includes('verification')) {
+        console.warn('Potential bot detection triggered');
+      }
+
+      const cookies = await context.cookies(); // 獲取所有域名的 cookies
       
-      // 簡單校驗：如果沒拿到 cookie 可能被封或加載失敗
+      console.log(`Successfully obtained ${cookies.length} cookies`);
+
       if (cookies.length === 0) {
         throw new Error('No cookies obtained');
       }
@@ -79,8 +138,7 @@ async function runScraper(retries = 2) {
       if (browser) await browser.close();
       attempt++;
       if (attempt > retries) throw err;
-      // 重試前稍微等待
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
     }
   }
 }

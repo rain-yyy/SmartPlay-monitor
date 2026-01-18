@@ -1,6 +1,7 @@
 node_modules
+cloudfare
 .git
-.gitignore
-npm-debug.log
-Dockerfile
-.dockerignore
+.github
+.vscode
+*.log
+.env
