@@ -19,7 +19,7 @@ function randomSelect(array, count) {
     return array.sort(() => Math.random() - 0.5).slice(0, count);
 }
 
-let test = generateUrl();
-console.log(test);
+// let test = generateUrl();
+// console.log(test);
 
 module.exports = { generateUrl };

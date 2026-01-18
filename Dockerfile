@@ -8,7 +8,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
-    && npx playwright install-deps chromium \
+    && npx playwright-chromium install-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 
 # 先拷贝 package.json 并安装依赖 (利用缓存)
