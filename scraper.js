@@ -101,28 +101,52 @@ async function runScraper(retries = 2) {
       const urlToVisit = generateUrl();
       console.log(`[Attempt ${attempt + 1}] Visiting: ${urlToVisit}`);
 
-      // 設置隨機請求頭
+      // 1. 先訪問首頁以獲取基礎 Cookie (模擬真人路徑)
+      const baseUrl = 'https://www.smartplay.lcsd.gov.hk/home';
+      console.log(`[Attempt ${attempt + 1}] Step 1: Visiting home page...`);
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+
+      // 2. 設置更真實的請求頭
       await page.setExtraHTTPHeaders({
         'Accept-Language': 'zh-HK,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://www.smartplay.lcsd.gov.hk/home',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
       });
 
-      // 增加超時時間，並使用 domcontentloaded
-      await page.goto(urlToVisit, {
+      // 3. 訪問目標搜索頁
+      console.log(`[Attempt ${attempt + 1}] Step 2: Visiting search page...`);
+      const response = await page.goto(urlToVisit, {
         waitUntil: 'domcontentloaded',
         timeout: 60_000
       });
 
-      // 隨機等待 2-5 秒，確保動態載入完成
-      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
+      const status = response ? response.status() : 'N/A';
+      const title = await page.title();
+      console.log(`[Attempt ${attempt + 1}] Response Status: ${status}, Title: "${title}"`);
+
+      // 隨機等待並嘗試等待特定的頁面組件（如果有）
+      // 這裡我們稍微延長一點等待，因為 SmartPlay 加載較慢
+      await new Promise(resolve => setTimeout(resolve, 4000 + Math.random() * 3000));
 
       // 檢查是否出現了驗證碼或被屏蔽
       const content = await page.content();
-      if (content.includes('Access Denied') || content.includes('Cloudflare') || content.includes('verification')) {
-        console.warn('Potential bot detection triggered');
+      if (status === 403 || content.includes('Access Denied') || title.includes('Access Denied')) {
+        console.error(`[Attempt ${attempt + 1}] BLOCKED by Firewall (IP Blocked)`);
+        // 打印一小段內容用於調試
+        console.log(`[Attempt ${attempt + 1}] Content Snippet: ${content.substring(0, 300)}`);
+        throw new Error('IP Blocked');
       }
 
-      const cookies = await context.cookies(); // 獲取所有域名的 cookies
+      if (content.includes('Cloudflare') || content.includes('verification')) {
+        console.warn(`[Attempt ${attempt + 1}] Cloudflare challenge detected`);
+      }
+
+      const cookies = await context.cookies();
       
       console.log(`Successfully obtained ${cookies.length} cookies`);
 
