@@ -1,7 +1,0 @@
-name = "smartplay-monitor-worker"
-main = "worker.js"
-compatibility_date = "2024-01-01"
-
-[vars]
-# 您也可以在这里定义环境变量，然后在 worker.js 中使用 env.CLOUD_RUN_API_URL
-# CLOUD_RUN_API_URL = "https://your-cloud-run-url.a.run.app"
