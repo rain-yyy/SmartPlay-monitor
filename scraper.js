@@ -26,24 +26,29 @@ async function runScraper(retries = 2) {
   let browser;
   let attempt = 0;
 
+  const proxyServer = process.env.PROXY_SERVER; // 例如 http://user:pass@host:port
+
   while (attempt <= retries) {
     try {
-      console.log(`[Attempt ${attempt + 1}] Launching browser...`);
-      browser = await chromium.launch({ 
+      console.log(`[Attempt ${attempt + 1}] Launching browser${proxyServer ? ' with proxy' : ''}...`);
+      
+      const launchOptions = {
         headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-blink-features=AutomationControlled',
           '--disable-infobars',
-          '--window-position=0,0',
-          '--ignore-certificate-errors',
-          '--ignore-certificate-errors-spki-list',
-          '--disable-dev-shm-usage', // 防止内存不足
-          '--disable-accelerated-2d-canvas',
+          '--disable-dev-shm-usage',
           '--disable-gpu',
         ]
-      });
+      };
+
+      if (proxyServer) {
+        launchOptions.proxy = { server: proxyServer };
+      }
+
+      browser = await chromium.launch(launchOptions);
 
       // 增加隨機硬體特徵
       const hardwareConcurrency = getRandomItem([4, 8, 12, 16]);
