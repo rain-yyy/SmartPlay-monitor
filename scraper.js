@@ -22,6 +22,36 @@ function getRandomItem(array) {
  * 入口函式：每次被 API 觸發時啟動 Chromium，並在完成後關閉。
  * @returns {Promise<Object>} 爬取結果
  */
+const DEFAULT_PROXY_SERVER = 'http://cswdzpyn-1:qt5d1bxkin0h@p.webshare.io:80';
+
+function buildProxyConfig(proxyUrl) {
+  if (!proxyUrl) return null;
+  const parsed = new URL(proxyUrl);
+  const username = parsed.username || undefined;
+  const password = parsed.password || undefined;
+  const authServer = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`;
+  return {
+    server: authServer,
+    username,
+    password,
+  };
+}
+
+function shouldAllowRequest(request, allowedOrigins) {
+  const url = request.url();
+  let origin;
+  try {
+    origin = new URL(url).origin;
+  } catch (error) {
+    return false;
+  }
+
+  if (!allowedOrigins.has(origin)) return false;
+
+  const type = request.resourceType();
+  return type === 'document' || type === 'script' || type === 'xhr' || type === 'fetch';
+}
+
 async function runScraper(retries = 2) {
   let browser;
   let attempt = 0;
@@ -67,7 +97,7 @@ async function runScraper(retries = 2) {
       });
 
       const page = await context.newPage();
-      
+
       // 深度偽裝
       await page.addInitScript(({ concurrency, memory }) => {
         // 隱藏 webdriver
@@ -104,54 +134,48 @@ async function runScraper(retries = 2) {
       }, { concurrency: hardwareConcurrency, memory: deviceMemory });
 
       const urlToVisit = generateUrl();
+      const baseUrl = 'https://www.smartplay.lcsd.gov.hk/home';
+      const allowedOrigins = new Set([new URL(baseUrl).origin, new URL(urlToVisit).origin]);
+
       console.log(`[Attempt ${attempt + 1}] Visiting: ${urlToVisit}`);
 
-      // 1. 先訪問首頁以獲取基礎 Cookie (模擬真人路徑)
-      const baseUrl = 'https://www.smartplay.lcsd.gov.hk/home';
-      console.log(`[Attempt ${attempt + 1}] Step 1: Visiting home page...`);
-      await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
-
-      // 2. 設置更真實的請求頭
-      await page.setExtraHTTPHeaders({
+      const headers = {
         'Accept-Language': 'zh-HK,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://www.smartplay.lcsd.gov.hk/home',
+        'Referer': baseUrl,
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'same-origin',
         'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
-      });
+      };
 
-      // 3. 訪問目標搜索頁
-      console.log(`[Attempt ${attempt + 1}] Step 2: Visiting search page...`);
-      const response = await page.goto(urlToVisit, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60_000
-      });
+      // 1) 先嘗試使用 Request API 取得 Set-Cookie（不下載任何子資源）
+      console.log(`[Attempt ${attempt + 1}] Step 1: Requesting home page (cookie-only)...`);
+      await context.request.get(baseUrl, { timeout: 30_000, headers });
 
-      const status = response ? response.status() : 'N/A';
-      const title = await page.title();
-      console.log(`[Attempt ${attempt + 1}] Response Status: ${status}, Title: "${title}"`);
+      console.log(`[Attempt ${attempt + 1}] Step 2: Requesting search page (cookie-only)...`);
+      await context.request.get(urlToVisit, { timeout: 60_000, headers });
 
-      // 隨機等待並嘗試等待特定的頁面組件（如果有）
-      // 這裡我們稍微延長一點等待，因為 SmartPlay 加載較慢
-      await new Promise(resolve => setTimeout(resolve, 4000 + Math.random() * 3000));
+      let cookies = await context.cookies();
 
-      // 檢查是否出現了驗證碼或被屏蔽
-      const content = await page.content();
-      if (status === 403 || content.includes('Access Denied') || title.includes('Access Denied')) {
-        console.error(`[Attempt ${attempt + 1}] BLOCKED by Firewall (IP Blocked)`);
-        // 打印一小段內容用於調試
-        console.log(`[Attempt ${attempt + 1}] Content Snippet: ${content.substring(0, 300)}`);
-        throw new Error('IP Blocked');
+      // 2) 若 Request API 沒拿到 cookie，才使用最小資源的頁面載入
+      if (cookies.length === 0) {
+        console.warn(`[Attempt ${attempt + 1}] No cookies from request API, falling back to minimal page load...`);
+
+        await page.route('**/*', (route) => {
+          if (shouldAllowRequest(route.request(), allowedOrigins)) {
+            route.continue();
+          } else {
+            route.abort();
+          }
+        });
+
+        await page.setExtraHTTPHeaders(headers);
+        await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        await page.goto(urlToVisit, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+
+        cookies = await context.cookies();
       }
-
-      if (content.includes('Cloudflare') || content.includes('verification')) {
-        console.warn(`[Attempt ${attempt + 1}] Cloudflare challenge detected`);
-      }
-
-      const cookies = await context.cookies();
       
       console.log(`Successfully obtained ${cookies.length} cookies`);
 

@@ -7,7 +7,7 @@ app.use(express.json({ limit: '1mb' }));
 // 簡單的內存緩存
 let cachedCookieData = null;
 let lastFetchTime = 0;
-const CACHE_TTL = 10 * 60 * 1000; // 緩存 10 分鐘
+const CACHE_TTL = 60 * 1000; // 緩存 1 分鐘
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
