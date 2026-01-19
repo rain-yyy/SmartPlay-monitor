@@ -25,8 +25,8 @@ RUN npm ci --omit=dev
 # 安裝 Chromium
 RUN npx playwright install chromium
 
-# 拷貝其餘源代碼
-COPY . .
+# 只拷貝運行所需的源代碼
+COPY *.js ./
 
 # 增加啟動腳本以處理信號
 # 使用 node 直接啟動也是可以的，但在 Docker 中有時需要 init

@@ -5,3 +5,4 @@ cloudfare
 .vscode
 *.log
 .env
+pw-browsers/
